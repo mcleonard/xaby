@@ -1,9 +1,7 @@
-from xaby import Tensor
+from xaby import tensor
 
 import jax.numpy as np
 from jax import jit
-
-__all__ = ["Loss", "mse", "nlloss"]
 
 
 class Loss:
@@ -14,7 +12,7 @@ class Loss:
         raise NotImplementedError
 
     def __lshift__(self, targets):
-        return Tensor(self._func(self.predictions.data, targets.data))
+        return tensor(self._func(self.predictions.data, targets.data))
 
     def __call__(self, predictions):
         self.predictions = predictions
@@ -35,9 +33,6 @@ class MSE(Loss):
         return "MeanSquaredError"
 
 
-mse = MSE()
-
-
 class NLLoss(Loss):
     """ Negative Log-Likelihood loss """
 
@@ -48,6 +43,3 @@ class NLLoss(Loss):
             return -np.mean(log_p[rows, targets])
 
         return func
-
-
-nlloss = NLLoss()

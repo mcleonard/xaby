@@ -7,6 +7,7 @@ from jax import jit, random
 
 class Linear(Op):
     def __init__(self, in_size, out_size, rand_key=None):
+        super().__init__()
         if rand_key is None:
             key = key_manager.key
         else:
