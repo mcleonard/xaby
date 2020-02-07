@@ -9,6 +9,11 @@ class KeyManager:
         def seed(self, seed):
             self.key = random.PRNGKey(seed)
 
+        def split(self, n=2):
+            key, *subkeys = random.split(self.key, n)
+            self.key = key
+            return subkeys
+
         def __str__(self):
             return repr(self) + self.key
 
@@ -31,6 +36,13 @@ class KeyManager:
 
 
 key_manager = KeyManager(random.PRNGKey(7))
+
+
+def key(n=1):
+    keys = key_manager.split(n+1)
+    if n == 1:
+        return keys[0]
+    return keys
 
 
 def set_seed(seed):

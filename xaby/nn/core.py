@@ -28,10 +28,8 @@ class Op(BaseOp):
     def __rshift__(self, other):
         if issubclass(other.__class__, BaseOp):
             return Sequential(self, other)
-        else:  # issubclass(other.__class__, Optimizer):
+        else:
             return other(self)
-        # else:
-        #     raise ValueError(f"This op doesn't support objects of type {type(other)}.")
 
 
 class Sequential(Op):
@@ -66,7 +64,10 @@ class Sequential(Op):
         return func
 
     def update(self, op):
-        ops = self.ops.copy()
+        if self.name is not None:
+            ops = Sequential(self).ops
+        else:
+            ops = self.ops.copy()
         ops.append(op)
         return self.__class__(*ops)
 

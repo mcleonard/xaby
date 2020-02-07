@@ -1,7 +1,15 @@
+from collections import OrderedDict
 from jax import jit, grad
 
 from xaby import tensor
 
+
+class Gradients(OrderedDict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, *kwargs)
+
+    def __rshift__(self, other):
+        return other(self)
 
 class BackProp:
     def __init__(self, model, loss):
@@ -25,7 +33,7 @@ class BackProp:
     def __call__(self, inputs, targets):
         loss = self._loss_func(inputs.data, self.model.parameters(), targets.data)
         grads = self._grad_func(inputs.data, self.model.parameters(), targets.data)
-        return tensor(loss), grads
+        return tensor(loss), Gradients(grads)
 
     def __repr__(self):
         return "\n".join(

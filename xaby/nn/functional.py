@@ -57,8 +57,8 @@ def exp(x):
 
 
 ### Layers ###
-def linear(in_size, out_size):
-    return layers.Linear(in_size, out_size)
+linear = layers.Linear
+conv2d = layers.Conv2d
 
 
 ### Losses ###
@@ -67,11 +67,11 @@ nlloss = losses.NLLoss()
 
 
 ## Other things! ###
-def add_name(name):
+def name(name):
     """ Add a name to a model/module """
 
-    def add_name(model):
+    def name_func(model):
         model.name = name
         return model
 
-    return add_name
+    return name_func
