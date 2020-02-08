@@ -11,6 +11,7 @@ class Gradients(OrderedDict):
     def __rshift__(self, other):
         return other(self)
 
+
 class BackProp:
     def __init__(self, model, loss):
         self.model = model

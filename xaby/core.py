@@ -3,7 +3,7 @@ from collections import OrderedDict
 from xaby import tensor
 from xaby.optim import Optimizer, BackProp
 
-from .utils import arg_count, func_name
+from xaby.utils import arg_count, func_name
 
 import jax
 

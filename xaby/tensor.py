@@ -15,6 +15,7 @@ class tensor:
     def item(self):
         return self.data.item()
 
+    @property
     def device(self):
         return self.data.device_buffer.device()
 

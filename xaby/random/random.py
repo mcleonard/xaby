@@ -39,7 +39,7 @@ key_manager = KeyManager(random.PRNGKey(7))
 
 
 def key(n=1):
-    keys = key_manager.split(n+1)
+    keys = key_manager.split(n + 1)
     if n == 1:
         return keys[0]
     return keys
