@@ -1,45 +1,42 @@
-from xaby import tensor
+from xaby import ArrayList, pack
 
-import jax.numpy as np
-from jax import jit
+import jax
+import jax.numpy as jnp
+
+
+__all__ = ["Loss", "nll_loss"]
 
 
 class Loss:
-    def __init__(self):
-        self._func = self.forward()
-
-    def forward(self):
-        raise NotImplementedError
-
-    def __lshift__(self, targets):
-        return tensor(self._func(self.predictions.data, targets.data))
-
-    def __call__(self, predictions):
-        self.predictions = predictions
-        return self
+    pass
 
 
-class MSE(Loss):
-    """ Mean Squared Error loss """
+class nll_loss(Loss):
+    def __init__(self, func):
+        self.func = func
 
-    def forward(self):
-        @jit
-        def func(predictions, targets):
-            return np.sum((targets - predictions) ** 2) / predictions.shape[0]
+        @jax.jit
+        def nll_loss(log_p: jnp.DeviceArray, targets: jnp.DeviceArray):
+            """ Assumes x are the log-softmax scores for a batch and 
+                y is a vector indicating the correct labels as integers """
 
-        return func
+            row_idx = jnp.arange(len(log_p))
+            return -jnp.mean(log_p[row_idx, targets])
 
-    def __repr__(self):
-        return "MeanSquaredError"
+        def loss_func(inputs, targets, params):
+            (log_p,) = self.func.forward(pack(inputs), params)
 
+            if jnp.any(targets > log_p.shape[1] - 1):
+                raise ValueError(
+                    f"Target labels are out of bounds given log-probabilities with shape {log_p.shape}"
+                )
 
-class NLLoss(Loss):
-    """ Negative Log-Likelihood loss """
+            return nll_loss(log_p, targets)
 
-    def forward(self):
-        @jit
-        def func(log_p, targets):
-            rows = np.arange(len(log_p))
-            return -np.mean(log_p[rows, targets])
+        self.loss_func = jax.value_and_grad(loss_func, argnums=2)
 
-        return func
+    def __call__(self, x: ArrayList) -> tuple:
+        if len(x) != 2:
+            raise ValueError("This function requires two inputs")
+
+        return self.loss_func(x[0], x[1], self.func.params)
