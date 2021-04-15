@@ -24,7 +24,7 @@ class nll_loss(Loss):
             return -jnp.mean(log_p[row_idx, targets])
 
         def loss_func(inputs, targets, params):
-            (log_p,) = self.func.forward(pack(inputs), params)
+            (log_p,) = self.func.forward(pack(inputs), params=params)
 
             if jnp.any(targets > log_p.shape[1] - 1):
                 raise ValueError(

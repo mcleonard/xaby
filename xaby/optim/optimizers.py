@@ -1,5 +1,6 @@
 import jax
 
+
 class Optimizer:
     def update_step(self, params, grads):
         raise NotImplemented

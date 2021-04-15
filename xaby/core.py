@@ -1,6 +1,7 @@
 from functools import wraps, partial
+from itertools import chain
 import inspect
-from typing import Callable
+from typing import Callable, List
 
 import jax
 
@@ -9,25 +10,19 @@ import jax
 
 
 class ArrayList(list):
-    def __new__(cls, x):
-        return super(ArrayList, cls).__new__(cls, list(x))
-
-    def append(self, element):
-        """ Appends to this list, returns a new copy. """
-        new = self.copy()
-        new.append(element)
-        return new
-
-    def extend(self, element):
-        new = self.copy()
-        new.extend(element)
-        return new
+    def __new__(cls, x=None):
+        return super(ArrayList, cls).__new__(cls, x)
 
     def __rshift__(self, other: Callable):
         return other(self)
 
     def __repr__(self):
         return "ArrayList:\n" + "\n".join(repr(e) for e in self)
+
+
+def collect(lists: List[ArrayList]) -> ArrayList:
+    """ Flattens a list of ArrayLists """
+    return ArrayList(chain(*lists))
 
 
 def pack(*x):
@@ -61,11 +56,35 @@ jax.tree_util.register_pytree_node(
 
 
 class Fn:
-    def __init__(self, func):
+    def __init__(self, func, n_inputs=None, n_outputs=None):
         self.name = func.__name__
-        self.__doc__ = "Expected input..." + str(func.__doc__)
-        self.forward = func
+
+        argspec = inspect.getfullargspec(func)
+        #print(argspec)
+        if "params" not in argspec.args and argspec.varkw is None:
+            print(inspect.getfullargspec(func))
+            @wraps(func)
+            def forward(x: ArrayList, params=None):
+                return func(x)
+
+            self.forward = forward
+        else:
+            self.forward = func
+        
+        self.n_inputs = n_inputs
+        self.n_outputs = n_outputs
         self.params = {}
+
+        if self.__doc__ is None:
+            self.__doc__ = func.__doc__
+
+    def describe(self):
+        print(
+            f"Fn: {repr(self)}\n"
+            f"Expected inputs: {'variable' if self.n_inputs is None else self.n_inputs}\n"
+            f"Expected outputs: {'variable' if self.n_outputs is None else self.n_outputs}\n\n"
+            f"{self.__doc__}"
+        )
 
     def _update(self, new_params: dict):
         self.params = new_params
@@ -74,13 +93,13 @@ class Fn:
         return Sequential(self, other)
 
     def __call__(self, x: ArrayList) -> ArrayList:
-        return pack(self.forward(*x, params=self.params))
+        return self.forward(x, params=self.params)
 
     def __repr__(self):
         return f"{self.name}"
 
 
-def build_func(func, **kwargs):
+def _build_func(func, **kwargs):
     if kwargs:
         p_func = partial(func, **kwargs)
         jitted_func = jax.jit(p_func)
@@ -88,13 +107,13 @@ def build_func(func, **kwargs):
         jitted_func = jax.jit(func)
 
     @wraps(func)
-    def f(*x, params=None):
-        return jitted_func(*x)
+    def f(x: ArrayList, params=None):
+        return pack(jitted_func(*x))
 
     return f
 
 
-def build_kwarg_func(func, kwargspec):
+def _build_kwarg_func(func, kwargspec):
     """ Builds a Fn based on keyword arguments. """
 
     def func_with_kwargs(**kwargs):
@@ -110,7 +129,7 @@ def build_kwarg_func(func, kwargspec):
                     f"Argument {key} not a valid keyword argument. Use only {valid_kws.keys()}"
                 )
 
-        return Fn(build_func(func, **kwargs))
+        return Fn(_build_func(func, **kwargs))
 
     func_with_kwargs.__doc__ = " \n".join(
         [
@@ -132,14 +151,21 @@ def fn(func):
     argspec = inspect.getfullargspec(func)
     # argspec[5] contains a dictionary of kw only arguments and their defaults
     if argspec[5]:
-        return build_kwarg_func(func, argspec[5])
+        return _build_kwarg_func(func, argspec[5])
     else:
-        return Fn(build_func(func))
+        return Fn(_build_func(func))
+
+def describe(func):
+    return func.describe()
 
 ######################
 
-class Sequential:
+
+class Sequential(Fn):
     def __init__(self, *funcs):
+        self.n_inputs = None
+        self.n_outputs = None
+        
         self.funcs = list(funcs)
         self.forward = self._build_forward()
         self.params = [f.params for f in self.funcs]
@@ -148,10 +174,14 @@ class Sequential:
         @jax.jit
         def forward(x: ArrayList, params: list) -> ArrayList:
             for f, p in zip(self.funcs, params):
-                x = pack(f.forward(*x, params=p))
+                x = f.forward(x, params=p)
             return x
 
+        self.n_inputs = self.funcs[0].n_inputs
+        self.n_outputs = self.funcs[-1].n_outputs
+
         return forward
+
 
     def _update(self, new_params: list, propagate=False):
 
@@ -182,6 +212,3 @@ class Sequential:
             )
 
         return self
-
-    def __call__(self, x: ArrayList) -> ArrayList:
-        return self.forward(x, self.params)
