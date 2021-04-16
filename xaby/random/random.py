@@ -1,5 +1,7 @@
 from jax import random
 
+__all__ = ["get_keys", "set_seed", "bernoulli", "uniform"]
+
 # Singleton class for maintaining random keys
 class KeyManager:
     class __KeyManager:
@@ -38,7 +40,7 @@ class KeyManager:
 key_manager = KeyManager(random.PRNGKey(7))
 
 
-def key(n=1):
+def get_keys(n=1):
     keys = key_manager.split(n + 1)
     if n == 1:
         return keys[0]
@@ -47,3 +49,20 @@ def key(n=1):
 
 def set_seed(seed):
     key_manager.seed(seed)
+
+
+########################
+# Implement sampling from distributions here. Mostly it's using JAX's random module but
+# handling splitting the keys automatically.
+
+
+def bernoulli(shape=(), p=0.5, key=None):
+    if key is None:
+        key = get_keys()
+    return random.bernoulli(key, p=p, shape=shape)
+
+
+def uniform(shape=(), key=None):
+    if key is None:
+        key = get_keys()
+    return random.uniform(key, shape=shape)

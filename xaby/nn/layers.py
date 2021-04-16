@@ -20,7 +20,7 @@ def _to_tuple(in_arg, shape):
 
 
 def _init_weights(k, shape):
-    key = xb.random.key()
+    key = xb.random.get_keys()
     sqrt_k = jnp.sqrt(k)
     return random.uniform(key, shape=shape, minval=-sqrt_k, maxval=sqrt_k)
 
@@ -47,7 +47,6 @@ class linear(xb.Fn):
 
 class conv2d(xb.Fn):
     def __init__(self, in_features, out_features, kernel_size=3, strides=1, padding=0):
-
         @jit
         def conv2d(x: xb.ArrayList, params: dict = None) -> xb.ArrayList:
             (inputs,) = x
@@ -56,7 +55,7 @@ class conv2d(xb.Fn):
                 inputs, params["weights"], self.strides, self.padding, None, None
             )
             return xb.pack(conv + b)
-        
+
         super().__init__(conv2d, 1, 1)
 
         kernel = _to_tuple(kernel_size, (2,))

@@ -7,9 +7,21 @@ def array(*args, **kwargs):
 
 array.__doc__ == jnp.array.__doc__
 
-from .core import ArrayList, pack, Fn, fn, collect
+from .core import (
+    ArrayList,
+    pack,
+    Fn,
+    fn,
+    collect,
+    describe,
+    eval,
+    train,
+    grad,
+    value_and_grad,
+)
 from .functions import *
 
 from . import nn
 from . import optim
 from . import random
+from . import utils

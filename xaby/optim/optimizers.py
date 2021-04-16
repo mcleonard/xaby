@@ -8,7 +8,6 @@ class Optimizer:
     def __call__(self, func, grads):
         new_params = jax.tree_multimap(self.update_step, func.params, grads)
         func._update(new_params)
-        return func
 
 
 class sgd(Optimizer):

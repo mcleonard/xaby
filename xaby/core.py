@@ -5,8 +5,8 @@ from typing import Callable, List
 
 import jax
 
-########
-# ArrayList is a
+################
+# ArrayList is a container for JAX DeviceArrays, it's the input data structure for all XABY functions
 
 
 class ArrayList(list):
@@ -27,10 +27,6 @@ def collect(lists: List[ArrayList]) -> ArrayList:
 
 def pack(*x):
     return ArrayList(x)
-
-
-def p(*x):
-    return pack(*x)
 
 
 ########
@@ -60,20 +56,20 @@ class Fn:
         self.name = func.__name__
 
         argspec = inspect.getfullargspec(func)
-        #print(argspec)
         if "params" not in argspec.args and argspec.varkw is None:
-            print(inspect.getfullargspec(func))
+
             @wraps(func)
-            def forward(x: ArrayList, params=None):
+            def forward(x: ArrayList, params):
                 return func(x)
 
             self.forward = forward
         else:
             self.forward = func
-        
+
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
         self.params = {}
+        self.grad_func = None
 
         if self.__doc__ is None:
             self.__doc__ = func.__doc__
@@ -86,14 +82,30 @@ class Fn:
             f"{self.__doc__}"
         )
 
-    def _update(self, new_params: dict):
+    def _eval(self):
+        pass
+
+    def _train(self):
+        pass
+
+    def _called(self, caller):
+        pass
+
+    def _update(self, new_params: dict) -> dict:
         self.params = new_params
+        return new_params
 
     def __rshift__(self, other: Callable):
-        return Sequential(self, other)
+        return sequential(self, other)
+
+    def __lshift__(self, x: ArrayList) -> tuple:
+        if self.grad_func is None:
+            self.grad_func = jax.value_and_grad(self.forward, argnums=1)
+
+        return self.grad_func(x, self.params)
 
     def __call__(self, x: ArrayList) -> ArrayList:
-        return self.forward(x, params=self.params)
+        return self.forward(x, self.params)
 
     def __repr__(self):
         return f"{self.name}"
@@ -155,54 +167,79 @@ def fn(func):
     else:
         return Fn(_build_func(func))
 
-def describe(func):
+
+def describe(func: Fn):
     return func.describe()
+
+
+def train(func: Fn):
+    func._train()
+
+
+def eval(func: Fn):
+    func._eval()
+
+
+def update(func: Fn):
+    return func._update(func.params)
+
+
+def grad(func: Fn):
+    func.forward = jax.grad(func.forward, argnums=1)
+    return func
+
+
+def value_and_grad(func: Fn):
+    func.forward = jax.value_and_grad(func.forward, argnums=1)
+    return func
+
 
 ######################
 
 
-class Sequential(Fn):
+class sequential(Fn):
     def __init__(self, *funcs):
-        self.n_inputs = None
-        self.n_outputs = None
-        
         self.funcs = list(funcs)
-        self.forward = self._build_forward()
-        self.params = [f.params for f in self.funcs]
 
-    def _build_forward(self) -> Callable:
         @jax.jit
-        def forward(x: ArrayList, params: list) -> ArrayList:
-            for f, p in zip(self.funcs, params):
+        def sequential(x: ArrayList, params: list) -> ArrayList:
+            for i, (f, p) in enumerate(zip(self.funcs, params)):
                 x = f.forward(x, params=p)
             return x
 
-        self.n_inputs = self.funcs[0].n_inputs
-        self.n_outputs = self.funcs[-1].n_outputs
+        super().__init__(
+            sequential,
+            n_inputs=self.funcs[0].n_inputs,
+            n_outputs=self.funcs[-1].n_outputs,
+        )
 
-        return forward
+        self.params = [f.params for f in self.funcs]
 
+    def _eval(self):
+        for f in self.funcs:
+            eval(f)
 
-    def _update(self, new_params: list, propagate=False):
+    def _train(self):
+        for f in self.funcs:
+            train(f)
 
-        # When we update parameters, we don't actually need to update the parameters
-        # on each layer/operation since the parameters are passed from this object. Instead,
-        # we just update the parameters on this object. However, it might be useful to propagate
-        # new parameters to the operations, so I'll make it optional.
-        if propagate:
-            # Propagate new parameters to each of the individual functions
-            for f, p in zip(self.funcs, new_params):
-                f._update(p)
+    def _update(self, new_params: dict) -> dict:
+        for i, (f, p) in enumerate(zip(self.funcs, new_params)):
+            returned_param = f._update(p)
+            self.params[i] = returned_param
 
-        self.params = new_params
+        return self.params
 
     def __rshift__(self, other: Callable):
         self.append(other)
         return self
 
     def append(self, other: Callable):
+        # TODO: Put a check in here to make sure expect inputs and outputs of the functions match
+
         self.funcs.append(other)
-        self.forward = self._build_forward()
+        self.n_inputs = self.funcs[0].n_inputs
+        self.n_outputs = self.funcs[-1].n_outputs
 
         try:
             self.params.append(other.params)
