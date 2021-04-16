@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name="xaby",
-    version="0.0.1a",
+    version="0.0.2",
     description="Functional Machine Learning",
     author="Mat Leonard",
     author_email="leonard.mat@gmail.com",
