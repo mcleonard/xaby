@@ -1,45 +1,48 @@
-from xaby import tensor
+from xaby import ArrayList, pack, Fn
 
-import jax.numpy as np
-from jax import jit
+import jax
+import jax.numpy as jnp
 
 
-class Loss:
+__all__ = ["nll_loss", "cross_entropy_loss"]
+
+
+class nll_loss(Fn):
+    """ Common loss function for use with log-probabilities returned from the log-softmax function """
+
     def __init__(self):
-        self._func = self.forward()
+        @jax.jit
+        def nll_loss(x: ArrayList, params):
+            """ Assumes x are the log-softmax scores for a batch and 
+                y is a vector indicating the correct labels as integers """
+            log_p, targets = x
+            row_idx = jnp.arange(len(log_p))
+            return -jnp.mean(log_p[row_idx, targets])
 
-    def forward(self):
-        raise NotImplementedError
-
-    def __lshift__(self, targets):
-        return tensor(self._func(self.predictions.data, targets.data))
-
-    def __call__(self, predictions):
-        self.predictions = predictions
-        return self
+        super().__init__(nll_loss, n_inputs=2, n_outputs=1)
 
 
-class MSE(Loss):
-    """ Mean Squared Error loss """
+class cross_entropy_loss(Fn):
+    """ Common loss function for use with probabilities returned from the softmax function """
 
-    def forward(self):
-        @jit
-        def func(predictions, targets):
-            return np.sum((targets - predictions) ** 2) / predictions.shape[0]
+    def __init__(self):
+        @jax.jit
+        def cross_entropy_loss(x: ArrayList, params):
+            p, targets = x
+            log_p = jnp.log(p)
+            row_idx = jnp.arange(len(log_p))
+            return -jnp.mean(log_p[row_idx, targets])
 
-        return func
-
-    def __repr__(self):
-        return "MeanSquaredError"
+        super().__init__(cross_entropy_loss, n_inputs=2, n_outputs=1)
 
 
-class NLLoss(Loss):
-    """ Negative Log-Likelihood loss """
+class binary_cross_entropy_loss(Fn):
+    """ Common loss function for use with probabilities returned from the sigmoid function """
 
-    def forward(self):
-        @jit
-        def func(log_p, targets):
-            rows = np.arange(len(log_p))
-            return -np.mean(log_p[rows, targets])
+    def __init__(self):
+        @jax.jit
+        def binary_cross_entropy_loss(x: ArrayList, params):
+            p, y = x
+            return -jnp.mean((y * jnp.log(p) + (1 - y) * jnp.log(1 - p)))
 
-        return func
+        super().__init__(binary_cross_entropy_loss, n_inputs=2, n_outputs=1)

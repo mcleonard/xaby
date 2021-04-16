@@ -1,8 +1,27 @@
-from .tensor import tensor
-from .core import BaseOp, Op, op
-from . import utils
-from .functional import *
+import jax.numpy as jnp
+
+
+def array(*args, **kwargs):
+    return jnp.array(*args, **kwargs)
+
+
+array.__doc__ == jnp.array.__doc__
+
+from .core import (
+    ArrayList,
+    pack,
+    Fn,
+    fn,
+    collect,
+    describe,
+    eval,
+    train,
+    grad,
+    value_and_grad,
+)
+from .functions import *
+
 from . import nn
 from . import optim
 from . import random
-from . import metrics
+from . import utils
