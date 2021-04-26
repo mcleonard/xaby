@@ -7,7 +7,7 @@ from .utils import sum_in_out
 
 __all__ = [
     "flatten",
-    "shape",
+    "shapes",
     "add",
     "sub",
     "mul",
@@ -15,21 +15,21 @@ __all__ = [
     "power",
     "mean",
     "select",
-    "parallel",
     "skip",
-    "split",
 ]
 
 
-class shape(Fn):
-    """ Returns the shape of each array in an ArrayList """
+# class shape(Fn):
+#     """ Returns the shape of each array in an ArrayList """
 
-    def __init__(self):
-        @jax.jit
-        def shape(x: ArrayList, params=None) -> tuple:
-            return tuple(x.shape for array in x)
+#     def __init__(self):
+#         @jax.jit
+#         def shape(x: ArrayList, params=None) -> tuple:
+#             return tuple(x.shape for array in x)
 
-        super().__init__(shape)
+#         super().__init__(shape)
+
+shapes = Fn(lambda x, params: tuple(array.shape for array in x), 1, 1, "shape")
 
 
 ##############################
@@ -67,76 +67,7 @@ def skip(x: ArrayList, params=None) -> ArrayList:
     return x
 
 
-skip = Fn(skip)
-
-
-class split(Fn):
-    def __init__(self, *funcs: Fn):
-        @jax.jit
-        def split(arrays: ArrayList, params) -> ArrayList:
-            # Testing something
-            if len(arrays) != len(self.funcs):
-                raise ValueError(
-                    "The number of input arrays must match the number of functions."
-                )
-
-            return collect(
-                [f.forward(pack(a), p) for a, f, p in zip(arrays, funcs, params)]
-            )
-
-        super().__init__(
-            split,
-            n_inputs=len(funcs),
-            n_outputs=sum_in_out(f.n_outputs for f in funcs),
-        )
-
-        self.funcs = funcs
-        self.params = [f.params for f in self.funcs]
-
-    # split is a higher-level function, contains other functions, so needs a bit more here
-    def _update(self, new_params: list) -> list:
-        for i, (f, p) in enumerate(zip(self.funcs, new_params)):
-            self.params[i] = f._update(p)
-
-        return new_params
-
-
-class parallel(Fn):
-    """ Takes multiple functions and passes a single input ArrayList to each function, then
-        collects the output of each function into a single ArrayList 
-        
-        Example
-        -------
-        a = array(...)
-        pack(a) >> parallel(sin, tan)  # returns [sin(a), tan(a)]
-        
-        Another example is a residual connection:
-        
-        dense = linear(10, 10) >> relu
-        pack(a) >> parallel(skip, dense) >> add 
-        
-        pack(a) >> parallel(skip, dense) returns [a, dense(a)], then add performs an element-wise 
-        addition on those arrays.
-        
-    """
-
-    def __init__(self, *funcs: Fn):
-        @jax.jit
-        def parallel(x: ArrayList, params: list) -> ArrayList:
-            return collect([f.forward(x, p) for f, p in zip(self.funcs, params)])
-
-        # TODO: Check expected inputs and outputs, calculate from the input functions
-        super().__init__(parallel)
-
-        self.funcs = funcs
-        self.params = [f.params for f in funcs]
-
-    # parallel is a higher-level function, contains other functions, so needs a bit more here
-    def _update(self, new_params: list) -> list:
-        for i, (f, p) in enumerate(zip(self.funcs, new_params)):
-            self.params[i] = f._update(p)
-
-        return new_params
+skip = Fn(skip, name="skip")
 
 
 #########################################
@@ -163,10 +94,10 @@ class flatten(Fn):
             func = jax.vmap(func, axis, axis)
 
         @jax.jit
-        def flatten(x: ArrayList, params=None) -> jnp.DeviceArray:
+        def flatten(x: ArrayList, params: dict) -> ArrayList:
             return pack(func(x[0]))
 
-        super().__init__(flatten, n_inputs=1, n_outputs=1)
+        super().__init__(flatten, n_inputs=1, n_outputs=1, name="flatten")
 
     def __repr__(self):
         return f"flatten(axis={self.axis})"
