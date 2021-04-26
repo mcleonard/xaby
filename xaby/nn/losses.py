@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 
-__all__ = ["nll_loss", "cross_entropy_loss"]
+__all__ = ["nll_loss", "cross_entropy_loss", "binary_cross_entropy_loss"]
 
 
 class nll_loss(Fn):
@@ -19,7 +19,7 @@ class nll_loss(Fn):
             row_idx = jnp.arange(len(log_p))
             return -jnp.mean(log_p[row_idx, targets])
 
-        super().__init__(nll_loss, n_inputs=2, n_outputs=1)
+        super().__init__(nll_loss, n_inputs=2, n_outputs=1, name="nll_loss")
 
 
 class cross_entropy_loss(Fn):
