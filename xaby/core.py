@@ -1,5 +1,4 @@
 from functools import wraps, partial
-from itertools import chain
 import inspect
 from typing import Callable, List
 
@@ -7,50 +6,8 @@ from collections import OrderedDict
 
 import jax
 
+from .arraylist import ArrayList, pack, collect
 from .utils import sum_in_out
-
-################
-# ArrayList is a container for JAX DeviceArrays, it's the input data structure for all XABY functions
-
-
-class ArrayList(list):
-    def __new__(cls, x=None):
-        return super(ArrayList, cls).__new__(cls, x)
-
-    def __rshift__(self, other: Callable):
-        return other(self)
-
-    def __repr__(self):
-        return "ArrayList:\n" + "\n".join(repr(e) for e in self)
-
-
-def collect(lists: List[ArrayList]) -> ArrayList:
-    """ Flattens a list of ArrayLists """
-    return ArrayList(chain(*lists))
-
-
-def pack(*x):
-    return ArrayList(x)
-
-
-########
-# This next part are functions so we can use ArrayList objects in JAX jitted functions
-
-
-def flatten_list(array_list):
-    elements = [e for e in array_list]
-    aux = None  # we don't need auxiliary information for this simple class
-    return (elements, aux)
-
-
-# careful, switched argument order! (unfortunate baggage from the past...)
-def unflatten_list(_aux, elements):
-    return ArrayList(elements)
-
-
-jax.tree_util.register_pytree_node(
-    ArrayList, flatten_list, unflatten_list,
-)
 
 #########
 
@@ -150,7 +107,7 @@ def _build_kwarg_func(func, kwargspec):
     return func_with_kwargs
 
 
-def fn(func):
+def fn(func) -> Fn:
     """ Decorator for converting functions into Fn objects for use in XABY models """
 
     argspec = inspect.getfullargspec(func)
@@ -161,40 +118,50 @@ def fn(func):
         return Fn(_build_func(func))
 
 
-def describe(func: Fn):
+def describe(func: Fn) -> str:
     return func.describe()
 
 
-def train(func: Fn):
+def train(func: Fn) -> Fn:
     func._train()
     return func
 
 
-def eval(func: Fn):
+def eval(func: Fn) -> Fn:
     func._eval()
     return func
 
 
-def set_meta(func: Fn, **kwargs):
+def set_meta(func: Fn, **kwargs) -> Fn:
     for k, v in kwargs.items():
         setattr(func, k, v)
     return func
 
 
-def update(func: Fn, params: dict = None):
+def update(func: Fn, params: dict = None) -> Fn:
     if params is None:
         params = func.params
     func._update(params)
     return func
 
 
-def grad(func: Fn):
+def grad(func: Fn) -> Fn:
     func.forward = jax.grad(func.forward, argnums=1)
     return func
 
 
-def value_and_grad(func: Fn):
+def value_and_grad(func: Fn) -> Fn:
     func.forward = jax.value_and_grad(func.forward, argnums=1)
+    return func
+
+
+def batchify(func: Fn) -> Fn:
+    if not hasattr(func, "n_inputs") or func.n_inputs is None:
+        raise ValueError("Function to batchify must have a defined number of inputs")
+
+    in_axes = (0,) * func.n_inputs
+    func.forward = jax.vmap(func.forward, in_axes=(pack(*in_axes), None))
+
     return func
 
 
@@ -215,7 +182,7 @@ def _addindent(s_: str, num_spaces: int) -> str:
     return s
 
 
-def safe_insert(func: Fn, funcs: dict) -> str:
+def _safe_insert(func: Fn, funcs: dict) -> str:
     """ Adds a func to a dictionary using the func's name, appends a numerical
         suffix if the name already exists, returns the key.
     """
@@ -229,7 +196,9 @@ def safe_insert(func: Fn, funcs: dict) -> str:
     return key
 
 
-class Container(Fn):
+class Combinator(Fn):
+    jit = False
+
     def _update(self, new_params: dict):
         self.params = new_params
         for i, (f, p) in enumerate(zip(self.funcs.values(), new_params.values())):
@@ -261,13 +230,24 @@ class Container(Fn):
         )
 
 
-class sequential(Container):
+def jit_combinators(val=False):
+    """ Controls whether combinators such as sequential, parallel, and split are compiled 
+        with JAX's jit. Activating this results in much longer compile times but faster
+        run times. So, currently, it's good to leave this off while developing and only turning
+        it on when training or evaluating.
+    """
+    Combinator.jit = val
+
+
+class sequential(Combinator):
     def __init__(self, *funcs: Fn):
-        @jax.jit
         def sequential(x: ArrayList, params: list) -> ArrayList:
             for i, (f, p) in enumerate(zip(self.funcs.values(), params.values())):
-                x = f.forward(x, params=p)
+                x = f.forward(x, p)
             return x
+
+        if self.jit:
+            sequential = jax.jit(sequential)
 
         super().__init__(sequential)
 
@@ -290,7 +270,7 @@ class sequential(Container):
     def append(self, func: Callable):
         # TODO: Put a check in here to make sure expected inputs and outputs of the functions match
 
-        key = safe_insert(func, self.funcs)
+        key = _safe_insert(func, self.funcs)
 
         if len(self.funcs) == 1:
             self.n_inputs = func.n_inputs
@@ -306,7 +286,7 @@ class sequential(Container):
         return self
 
 
-class split(Container):
+class split(Combinator):
     def __init__(self, *funcs: Fn):
         """ Takes N functions and an ArrayList with N arrays, then maps the input arrays to the functions.
             It then collects the output of each function into a single ArrayList.
@@ -318,7 +298,6 @@ class split(Container):
             pack(a, b) >> split(sin, tan)  # returns [sin(a), tan(b)]
         """
 
-        @jax.jit
         def split(arrays: ArrayList, params) -> ArrayList:
             if len(arrays) != len(self.funcs):
                 raise ValueError(
@@ -332,6 +311,9 @@ class split(Container):
                 ]
             )
 
+        if self.jit:
+            split = jax.jit(split)
+
         super().__init__(
             split,
             n_inputs=len(funcs),
@@ -342,16 +324,27 @@ class split(Container):
         self.funcs = OrderedDict()
 
         for f in funcs:
-            key = safe_insert(f, self.funcs)
-            try:
-                self.params[key] = f.params
-            except:
-                raise ValueError(
-                    f"Attempting to add {other} but it doesn't have the required params attribute."
-                )
+            self.append(f)
+
+    def append(self, func: Fn):
+        key = _safe_insert(func, self.funcs)
+        try:
+            self.params[key] = func.params
+        except:
+            raise ValueError(
+                f"Attempting to add {func} but it doesn't have the required params attribute."
+            )
+
+    def __add__(self, func: Fn):
+        if not isinstance(func, Fn):
+            raise ValueError("Can add only Fn functions to a split function")
+
+        self.append(func)
+        self.n_inputs += 1
+        self.n_outputs = sum_in_out(f.n_outputs for f in funcs)
 
 
-class parallel(Container):
+class parallel(Combinator):
     """ Takes multiple functions and passes the input ArrayList to each function, then
         collects the output of each function into a single ArrayList 
         
@@ -371,19 +364,22 @@ class parallel(Container):
     """
 
     def __init__(self, *funcs: Fn):
-        @jax.jit
+
+        # TODO: Check expected inputs and outputs, calculate from the input functions
         def parallel(x: ArrayList, params: list) -> ArrayList:
             return collect(
                 [f.forward(x, p) for f, p in zip(self.funcs.values(), params.values())]
             )
 
-        # TODO: Check expected inputs and outputs, calculate from the input functions
+        if self.jit:
+            parallel = jax.jit(parallel)
+
         super().__init__(parallel, name="parallel")
 
         self.funcs = OrderedDict()
 
         for f in funcs:
-            key = safe_insert(f, self.funcs)
+            key = _safe_insert(f, self.funcs)
             try:
                 self.params[key] = f.params
             except:

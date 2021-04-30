@@ -1,8 +1,9 @@
+import jax.numpy as jnp
 from jax import random
 
-__all__ = ["get_keys", "set_seed", "bernoulli", "uniform"]
+__all__ = ["get_keys", "set_seed", "bernoulli", "uniform", "normal", "randint"]
 
-# Singleton class for maintaining random keys
+# Singleton class for managing random keys
 class KeyManager:
     class __KeyManager:
         def __init__(self, key):
@@ -56,13 +57,25 @@ def set_seed(seed):
 # handling splitting the keys automatically.
 
 
-def bernoulli(shape=(), p=0.5, key=None):
+def bernoulli(shape=(), p=0.5, key=None) -> jnp.DeviceArray:
     if key is None:
         key = get_keys()
     return random.bernoulli(key, p=p, shape=shape)
 
 
-def uniform(shape=(), key=None):
+def uniform(shape=(), key=None, dtype=jnp.float32) -> jnp.DeviceArray:
     if key is None:
         key = get_keys()
-    return random.uniform(key, shape=shape)
+    return random.uniform(key, shape=shape, dtype=dtype)
+
+
+def normal(shape=(), key=None, dtype=jnp.float32) -> jnp.DeviceArray:
+    if key is None:
+        key = get_keys()
+    return random.normal(key, shape=shape, dtype=dtype)
+
+
+def randint(shape=(), key=None, minval=0, maxval=2, dtype=jnp.int32) -> jnp.DeviceArray:
+    if key is None:
+        key = get_keys()
+    return random.randint(key, shape, minval, maxval, dtype)

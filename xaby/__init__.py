@@ -8,14 +8,12 @@ def array(*args, **kwargs):
 array.__doc__ == jnp.array.__doc__
 
 from .core import (
-    ArrayList,
-    pack,
     Fn,
     fn,
+    jit_combinators,
     sequential,
     parallel,
     split,
-    collect,
     describe,
     set_meta,
     eval,
@@ -23,7 +21,11 @@ from .core import (
     update,
     grad,
     value_and_grad,
+    batchify,
 )
+
+from .arraylist import ArrayList, pack, collect
+
 from .functions import *
 
 from . import nn

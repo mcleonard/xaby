@@ -13,6 +13,9 @@ __all__ = [
     "softmax",
     "log_softmax",
     "dropout",
+    "nll_loss",
+    "cross_entropy_loss",
+    "binary_cross_entropy_loss",
 ]
 
 
@@ -64,14 +67,11 @@ class dropout(Fn):
     def __init__(self, drop_p=0.5, in_shape=None):
 
         self.drop_p = drop_p
-        self.in_shape = in_shape
 
         @jax.jit
         def train_dropout(x: ArrayList, params=None) -> ArrayList:
             array = x[0]
-            mask = xr.bernoulli(array.shape)
-            # It's possible the input array can be smaller than previous ones, such as the last batch
-            # in an epoch. So I'll add a bit in there so the mask will be the same shape as the array
+            mask = xr.bernoulli(array.shape, p=(1 - self.drop_p))
             output = pack(
                 array * mask / max(1 - self.drop_p, 0.00001)
             )  # The max prevents dividing by zero
@@ -79,7 +79,6 @@ class dropout(Fn):
 
         @jax.jit
         def eval_dropout(x: ArrayList, params=None) -> ArrayList:
-            self._set_shape(x[0].shape)
             return x
 
         self._train_func = train_dropout
@@ -158,3 +157,72 @@ class avg_pool2d(Fn):
             return pack(sums / window_size)
 
         super().__init__(avg_pool2d, 1, 1)
+
+
+@jax.jit
+def _log_loss(
+    log_p: jnp.DeviceArray, targets: jnp.DeviceArray, smoothing: float
+) -> jnp.DeviceArray:
+
+    row_idx = jnp.arange(len(log_p))
+    true_targets = log_p[row_idx, targets]
+
+    if smoothing is None:
+        return -jnp.mean(true_targets)
+    else:
+
+        return -jnp.mean(
+            smoothing / log_p.shape[1] * log_p.sum(axis=1)
+            + (1 - smoothing) * true_targets
+        )
+
+
+class nll_loss(Fn):
+    """ Common loss function for use with log-probabilities returned from the log-softmax function """
+
+    def __init__(self, smoothing: Optional[float] = None):
+        if smoothing is None:
+            smoothing = 0.0
+
+        if smoothing < 0.0 or smoothing >= 1.0:
+            raise ValueError("smoothing must be between 0 and 1")
+
+        @jax.jit
+        def nll_loss(x: ArrayList, params):
+            """ Assumes x are the log-softmax scores for a batch and 
+                y is a vector indicating the correct labels as integers """
+            log_p, targets = x
+            return pack(_log_loss(log_p, targets, smoothing))
+
+        super().__init__(nll_loss, n_inputs=2, n_outputs=1, name="nll_loss")
+
+
+class cross_entropy_loss(Fn):
+    """ Common loss function for use with probabilities returned from the softmax or sigmoid functions """
+
+    def __init__(self, smoothing: Optional[float] = None):
+        if smoothing is None:
+            smoothing = 0.0
+
+        if smoothing < 0.0 or smoothing >= 1.0:
+            raise ValueError("smoothing must be between 0 and 1")
+
+        @jax.jit
+        def cross_entropy_loss(x: ArrayList, params):
+            p, targets = x
+            log_p = jnp.log(p)
+            return pack(_log_loss(log_p, targets, smoothing))
+
+        super().__init__(cross_entropy_loss, n_inputs=2, n_outputs=1)
+
+
+class binary_cross_entropy_loss(Fn):
+    """ Common loss function for use with probabilities returned from the sigmoid function """
+
+    def __init__(self):
+        @jax.jit
+        def binary_cross_entropy_loss(x: ArrayList, params):
+            p, y = x
+            return pack(-jnp.mean((y * jnp.log(p) + (1 - y) * jnp.log(1 - p))))
+
+        super().__init__(binary_cross_entropy_loss, n_inputs=2, n_outputs=1)

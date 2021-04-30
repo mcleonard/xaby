@@ -1,3 +1,5 @@
+from typing import Optional
+
 from xaby import ArrayList, pack, Fn
 
 import jax
@@ -25,13 +27,20 @@ class nll_loss(Fn):
 class cross_entropy_loss(Fn):
     """ Common loss function for use with probabilities returned from the softmax function """
 
-    def __init__(self):
+    def __init__(self, smoothing: Optional[float] = None):
         @jax.jit
         def cross_entropy_loss(x: ArrayList, params):
             p, targets = x
             log_p = jnp.log(p)
             row_idx = jnp.arange(len(log_p))
-            return -jnp.mean(log_p[row_idx, targets])
+            true_targets = log_p[row_idx, targets]
+
+            if smoothing is None:
+                return -jnp.mean(true_targets)
+            else:
+                return -jnp.mean(
+                    smoothing * log_p.sum(axis=1) - (1 - smoothing) * true_targets
+                )
 
         super().__init__(cross_entropy_loss, n_inputs=2, n_outputs=1)
 

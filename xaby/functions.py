@@ -7,6 +7,7 @@ from .utils import sum_in_out
 
 __all__ = [
     "flatten",
+    "concatenate",
     "shapes",
     "add",
     "sub",
@@ -57,17 +58,15 @@ class select(Fn):
         def select(arrays: ArrayList, params=None) -> ArrayList:
             return ArrayList(arrays[i] for i in self.indices)
 
-        super().__init__(select, n_inputs=None, n_outputs=len(indices))
+        super().__init__(select, n_inputs=None, n_outputs=len(indices), name="select")
 
         self.indices = indices
 
-
-@jax.jit
-def skip(x: ArrayList, params=None) -> ArrayList:
-    return x
+    def __repr__(self):
+        return f"select({self.indices})"
 
 
-skip = Fn(skip, name="skip")
+skip = Fn(jax.jit(lambda x, p: x), name="skip")
 
 
 #########################################
